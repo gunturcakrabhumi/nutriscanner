@@ -1,0 +1,71 @@
+{
+  "name": "NutriScanner - Review Confirm",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api/analyze/confirm",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "name": "Confirm Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "id": "confirm-webhook-01"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NutriScanner — Confirmation & Final Calculation Engine\nconst body = $input.item.json.body || $input.item.json;\nconst confirmed = body.confirmed_data || body;\n\nconst serving = confirmed.serving || {};\nconst nutrition = confirmed.nutrition || {};\nconst ingredients = confirmed.ingredients || {};\nconst identity = confirmed.identity || {};\nconst allergens = confirmed.allergens || {};\n\n// Deterministic Package Total Calculation\n// Rule: Package Total = Nutrient Amount per Serving * Servings per Container\nconst servingsCount = (typeof serving.servings_per_container === 'number' && serving.servings_per_container > 0)\n  ? serving.servings_per_container\n  : null;\n\nconst calculatedPackage = {};\nconst canCalculatePackage = servingsCount !== null;\n\nconst standardNutrients = ['energy', 'protein', 'total_fat', 'saturated_fat', 'carbohydrate', 'sugar', 'sodium'];\n\nfor (const nutrient of standardNutrients) {\n  const val = nutrition[nutrient];\n  if (typeof val === 'number' && canCalculatePackage) {\n    calculatedPackage[nutrient] = Math.round((val * servingsCount) * 100) / 100;\n  } else {\n    calculatedPackage[nutrient] = null;\n  }\n}\n\nconst missingInfo = confirmed.missing_information || [];\nif (!canCalculatePackage) {\n  missingInfo.push('Jumlah sajian per kemasan tidak tersedia; kalkulasi total kemasan ditiadakan.');\n}\n\nreturn [{\n  json: {\n    session_id: body.session_id || `nutri_${Date.now()}`,\n    status: 'completed',\n    result: {\n      identity: identity,\n      serving: serving,\n      nutrition: nutrition,\n      calculated: {\n        package: calculatedPackage,\n        can_calculate_package: canCalculatePackage\n      },\n      ingredients: ingredients,\n      allergens: allergens,\n      missing_information: missingInfo,\n      neutral_summary: `Produk ${identity.name || ''} dengan takaran saji ${serving.size || '-'}${serving.unit || 'g'}.${typeof nutrition.energy === 'number' ? ` Energi ${nutrition.energy} kkal per sajian.` : ''}${canCalculatePackage && calculatedPackage.energy ? ` Total energi kemasan (${servingsCount} sajian) adalah ${calculatedPackage.energy} kkal.` : ''}`\n    }\n  }\n}];"
+      },
+      "name": "Finalize Deterministic Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "id": "finalize-result-02"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Respond Final Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, 300],
+      "id": "respond-final-03"
+    }
+  ],
+  "connections": {
+    "Confirm Webhook": {
+      "main": [
+        [
+          {
+            "node": "Finalize Deterministic Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Deterministic Result": {
+      "main": [
+        [
+          {
+            "node": "Respond Final Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

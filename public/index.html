@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nutrition Scanner — Fakta Label Makanan, Bukan Vonis</title>
+  <meta name="description" content="Alat pembaca dan penjelas fakta label informasi nilai gizi dan komposisi makanan kemasan secara netral, akurat, dan deterministik.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-badge">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            <circle cx="12" cy="12" r="4"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">NutriScanner</h1>
+          <p class="brand-subtitle">Facts, not verdicts • Interpretasi Label Makanan</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="status-pill status-ready" id="systemStatus">Siap Scan</span>
+      </div>
+    </header>
+
+    <!-- Main Content Flow -->
+    <main class="main-content">
+      
+      <!-- SCREEN 1: INTAKE / SCANNER -->
+      <section id="screenIntake" class="screen-view active">
+        <div class="hero-section">
+          <h2 class="hero-heading">Pahami fakta di balik label makanan Anda</h2>
+          <p class="hero-subtext">
+            Unggah foto label informasi nilai gizi atau komposisi. Sistem akan mengekstrak fakta, membiarkan Anda memeriksa hasil, dan menghitung total nutrisi secara deterministik tanpa memberikan vonis kesehatan sepihak.
+          </p>
+        </div>
+
+        <!-- Mode Selector Tabs -->
+        <div class="input-tabs" role="tablist">
+          <button class="tab-btn active" id="tabPhoto" data-mode="photo" role="tab" aria-selected="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            Unggah Foto Label (1–4)
+          </button>
+          <button class="tab-btn" id="tabText" data-mode="text" role="tab" aria-selected="false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            Tempel Teks Label
+          </button>
+          <button class="tab-btn" id="tabManual" data-mode="manual" role="tab" aria-selected="false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Input Manual
+          </button>
+        </div>
+
+        <!-- Tab 1: Photo Upload (Primary) + Optional Live Camera -->
+        <div id="panelPhoto" class="tab-panel active">
+          <div class="upload-dropzone" id="dropZone">
+            <input type="file" id="fileInput" multiple accept="image/jpeg,image/png,image/webp" style="display: none;">
+            <div class="dropzone-inner">
+              <div class="dropzone-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <h3 class="dropzone-title">Tarik & Letakkan foto label di sini</h3>
+              <p class="dropzone-hint">Maksimal 4 foto per analisis (Format JPG, PNG, WEBP)</p>
+              <div class="dropzone-actions">
+                <button type="button" class="btn btn-primary" id="btnBrowseFiles">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Pilih File Foto
+                </button>
+                <button type="button" class="btn btn-secondary" id="btnOpenCamera" title="Ambil foto langsung jika perangkat mendukung">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Buka Kamera
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Camera Stream Modal (Progressive Enhancement) -->
+          <div id="cameraModal" class="camera-modal hidden">
+            <div class="camera-modal-content">
+              <div class="camera-modal-header">
+                <h3>Ambil Foto Label</h3>
+                <button type="button" class="btn-icon" id="btnCloseCamera">&times;</button>
+              </div>
+              <div class="camera-video-wrapper">
+                <video id="cameraVideo" autoplay playsinline></video>
+                <canvas id="cameraCanvas" style="display: none;"></canvas>
+              </div>
+              <div class="camera-modal-footer">
+                <button type="button" class="btn btn-primary" id="btnCapturePhoto">Ambil Foto</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Image Preview Strip -->
+          <div class="preview-container hidden" id="previewContainer">
+            <div class="preview-header">
+              <span class="preview-count" id="previewCount">0 dari 4 foto terpilih</span>
+              <button type="button" class="btn-text-danger" id="btnClearAllPhotos">Hapus Semua</button>
+            </div>
+            <div class="preview-grid" id="previewGrid"></div>
+          </div>
+
+          <div class="form-footer">
+            <button type="button" class="btn btn-accent btn-large" id="btnAnalyzePhotos" disabled>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Ekstrak & Analisis Label
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Text Input -->
+        <div id="panelText" class="tab-panel">
+          <div class="card p-4">
+            <label for="textInput" class="form-label">Tempel Teks Tabel Nilai Gizi & Komposisi</label>
+            <textarea id="textInput" class="form-textarea" rows="8" placeholder="Contoh:&#10;Informasi Nilai Gizi&#10;Takaran Saji: 25 g&#10;Jumlah Sajian per Kemasan: 4&#10;Energi Total: 120 kkal&#10;Lemak Total: 4g&#10;Gula: 8g&#10;Natrium: 90mg&#10;Komposisi: Tepung terigu, gula, minyak nabati, lesitin kedelai..."></textarea>
+            <div class="form-footer mt-4">
+              <button type="button" class="btn btn-accent btn-large" id="btnAnalyzeText">
+                Ekstrak Data Teks
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Manual Input -->
+        <div id="panelManual" class="tab-panel">
+          <div class="card p-4">
+            <h3 class="card-title mb-3">Input Data Nilai Gizi Manual</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label" for="manualName">Nama Produk</label>
+                <input type="text" id="manualName" class="form-input" placeholder="Contoh: Biskuit Cokelat">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualBrand">Brand / Merk</label>
+                <input type="text" id="manualBrand" class="form-input" placeholder="Contoh: EnakFood">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualServingSize">Takaran Saji</label>
+                <div class="input-with-unit">
+                  <input type="number" id="manualServingSize" class="form-input" placeholder="25" step="any">
+                  <select id="manualServingUnit" class="form-select">
+                    <option value="g">g</option>
+                    <option value="ml">ml</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualServingsPerContainer">Jumlah Sajian per Kemasan</label>
+                <input type="number" id="manualServingsPerContainer" class="form-input" placeholder="4" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualEnergy">Energi Total (kkal / sajian)</label>
+                <input type="number" id="manualEnergy" class="form-input" placeholder="120" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualProtein">Protein (g / sajian)</label>
+                <input type="number" id="manualProtein" class="form-input" placeholder="2" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualFat">Lemak Total (g / sajian)</label>
+                <input type="number" id="manualFat" class="form-input" placeholder="4" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualSatFat">Lemak Jenuh (g / sajian)</label>
+                <input type="number" id="manualSatFat" class="form-input" placeholder="1.5" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualCarb">Karbohidrat Total (g / sajian)</label>
+                <input type="number" id="manualCarb" class="form-input" placeholder="18" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualSugar">Gula (g / sajian)</label>
+                <input type="number" id="manualSugar" class="form-input" placeholder="6" step="any">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="manualSodium">Natrium (mg / sajian)</label>
+                <input type="number" id="manualSodium" class="form-input" placeholder="85" step="any">
+              </div>
+            </div>
+            <div class="form-group mt-3">
+              <label class="form-label" for="manualIngredients">Daftar Komposisi (Pisahkan dengan koma)</label>
+              <textarea id="manualIngredients" class="form-textarea" rows="3" placeholder="Tepung terigu, gula, minyak nabati, bubuk kakao, lesitin kedelai"></textarea>
+            </div>
+            <div class="form-footer mt-4">
+              <button type="button" class="btn btn-accent btn-large" id="btnAnalyzeManual">
+                Hitung & Analisis Data Manual
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: LOADING OVERLAY -->
+      <section id="screenLoading" class="screen-view">
+        <div class="loading-card">
+          <div class="spinner"></div>
+          <h3 class="loading-title" id="loadingTitle">Mengekstrak Fakta Label...</h3>
+          <p class="loading-subtext" id="loadingSubtext">AI Vision sedang membaca tabel gizi dan komposisi secara teliti.</p>
+          <div class="loading-progress-bar">
+            <div class="loading-progress-fill" id="loadingProgress"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: REVIEW & CORRECTION -->
+      <section id="screenReview" class="screen-view">
+        <div class="section-header">
+          <div>
+            <span class="badge badge-warning">Tahap Review</span>
+            <h2 class="section-title">Periksa Hasil Ekstraksi</h2>
+            <p class="section-desc">Silakan tinjau dan koreksi data yang terbaca dari label sebelum kalkulasi akhir dijalankan.</p>
+          </div>
+          <button type="button" class="btn btn-secondary" id="btnBackToIntake">Batal & Ulangi</button>
+        </div>
+
+        <!-- Conflict Alert Banner (If Any) -->
+        <div id="conflictBanner" class="alert-box alert-conflict hidden">
+          <div class="alert-icon">⚠️</div>
+          <div>
+            <h4 class="alert-title">Konflik Nilai Terdeteksi Antar-Foto</h4>
+            <p class="alert-body" id="conflictListText">Ada perbedaan angka gizi pada foto yang Anda unggah. Silakan tentukan nilai yang sesuai pada form di bawah.</p>
+          </div>
+        </div>
+
+        <!-- Missing Data Notice (If Any) -->
+        <div id="missingBanner" class="alert-box alert-info hidden">
+          <div class="alert-icon">ℹ️</div>
+          <div>
+            <h4 class="alert-title">Informasi yang Tidak Terbaca pada Foto</h4>
+            <ul class="alert-list" id="missingList"></ul>
+          </div>
+        </div>
+
+        <!-- Review Form -->
+        <div class="card p-4 mt-4">
+          <h3 class="card-subtitle">Identitas & Takaran Saji</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="reviewName">Nama Produk</label>
+              <input type="text" id="reviewName" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewBrand">Brand / Merk</label>
+              <input type="text" id="reviewBrand" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewServingSize">Takaran Saji (per sajian)</label>
+              <div class="input-with-unit">
+                <input type="number" id="reviewServingSize" class="form-input" step="any">
+                <select id="reviewServingUnit" class="form-select">
+                  <option value="g">g</option>
+                  <option value="ml">ml</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewServingsPerContainer">Jumlah Sajian per Kemasan</label>
+              <input type="number" id="reviewServingsPerContainer" class="form-input" step="any" placeholder="Kosongkan jika tidak ada di label">
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3 class="card-subtitle">Nilai Gizi per Sajian</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="reviewEnergy">Energi Total (kkal)</label>
+              <input type="number" id="reviewEnergy" class="form-input" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewProtein">Protein (g)</label>
+              <input type="number" id="reviewProtein" class="form-input" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewTotalFat">Lemak Total (g)</label>
+              <input type="number" id="reviewTotalFat" class="form-input" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewSatFat">Lemak Jenuh (g)</label>
+              <input type="number" id="reviewSatFat" class="form-input" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewCarb">Karbohidrat Total (g)</label>
+              <input type="number" id="reviewCarb" class="form-input" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewSugar">Gula (g)</label>
+              <input type="number" id="reviewSugar" class="form-input" step="any">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="reviewSodium">Natrium (mg)</label>
+              <input type="number" id="reviewSodium" class="form-input" step="any">
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <h3 class="card-subtitle">Daftar Komposisi & Alergen</h3>
+          <div class="form-group">
+            <label class="form-label" for="reviewIngredients">Teks Komposisi Mentah</label>
+            <textarea id="reviewIngredients" class="form-textarea" rows="3"></textarea>
+          </div>
+          <div class="form-group mt-2">
+            <label class="form-label" for="reviewAllergens">Deklarasi Alergen (Hanya jika tertulis eksplisit di kemasan)</label>
+            <input type="text" id="reviewAllergens" class="form-input" placeholder="Contoh: Mengandung alergen: susu, kedelai">
+          </div>
+
+          <div class="form-footer mt-4">
+            <button type="button" class="btn btn-accent btn-large" id="btnConfirmReview">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              Konfirmasi Data & Tampilkan Hasil
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 4: FINAL RESULT -->
+      <section id="screenResult" class="screen-view">
+        <div class="result-header">
+          <div>
+            <span class="badge badge-success">Hasil Analisis Fakta</span>
+            <h2 class="result-product-title" id="resProductName">Nama Produk</h2>
+            <p class="result-product-brand" id="resProductBrand">Brand</p>
+          </div>
+          <button type="button" class="btn btn-primary" id="btnScanAnother">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Scan Label Lain
+          </button>
+        </div>
+
+        <!-- Neutral Summary Banner -->
+        <div class="summary-card">
+          <div class="summary-icon">📋</div>
+          <div>
+            <h4 class="summary-title">Ringkasan Fakta Label</h4>
+            <p class="summary-text" id="resNeutralSummary">Ringkasan fakta netral produk.</p>
+          </div>
+        </div>
+
+        <!-- Serving & Package Context Card -->
+        <div class="context-grid">
+          <div class="context-card">
+            <span class="context-label">Takaran Saji</span>
+            <span class="context-value" id="resServingSize">-</span>
+            <span class="context-hint">Per sajian yang dikonsumsi</span>
+          </div>
+          <div class="context-card">
+            <span class="context-label">Jumlah Sajian per Kemasan</span>
+            <span class="context-value" id="resServingsCount">-</span>
+            <span class="context-hint">Faktor pengali total kemasan</span>
+          </div>
+          <div class="context-card">
+            <span class="context-label">Status Kalkulasi Total</span>
+            <span class="context-value" id="resCalcStatus">Tersedia</span>
+            <span class="context-hint" id="resCalcHint">Dihitung secara deterministik</span>
+          </div>
+        </div>
+
+        <!-- Nutrition Comparison Table (Per Serving vs Total Package) -->
+        <div class="card p-4 mt-4">
+          <h3 class="card-title">Tabel Perbandingan Nilai Gizi</h3>
+          <p class="card-desc mb-3">Kolom "Total per Kemasan" dihitung deterministik: <code>Nilai per Sajian × Jumlah Sajian</code>.</p>
+          
+          <div class="table-responsive">
+            <table class="nutri-table">
+              <thead>
+                <tr>
+                  <th>Zat Gizi</th>
+                  <th>Per Sajian</th>
+                  <th>Total per Kemasan</th>
+                  <th>Catatan</th>
+                </tr>
+              </thead>
+              <tbody id="nutriTableBody">
+                <!-- Rows injected dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Ingredients Explanation Section -->
+        <div class="card p-4 mt-4">
+          <h3 class="card-title">Penjelasan Fungsi Bahan (Komposisi)</h3>
+          <p class="card-desc mb-3">Penjelasan objektif mengenai peran tiap bahan dalam produk (bukan penilaian bahaya/keamanan).</p>
+          <div class="ingredient-list" id="ingredientList"></div>
+        </div>
+
+        <!-- Allergens Section -->
+        <div class="card p-4 mt-4" id="allergenSection">
+          <h3 class="card-title">Informasi Alergen</h3>
+          <div id="allergenContent" class="allergen-box"></div>
+        </div>
+
+        <!-- Missing Information Honest Reporting -->
+        <div class="card p-4 mt-4 border-dashed" id="missingSection">
+          <h3 class="card-title text-muted">Informasi Tidak Tersedia pada Label</h3>
+          <p class="card-desc">Sistem melaporkan fakta yang memang tidak tertera pada foto/teks yang diberikan:</p>
+          <ul class="missing-facts-list" id="missingFactsList"></ul>
+        </div>
+      </section>
+
+      <!-- Global Notification Toast -->
+      <div id="toastContainer" class="toast-container"></div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>NutriScanner • Proyek Otomatisasi & Integrasi AI Netral • <em>Facts, not verdicts.</em></p>
+      <p class="footer-sub">Perhitungan nutrisi bersifat deterministik. Penilaian akhir konsumsi sepenuhnya ada di tangan Anda.</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
