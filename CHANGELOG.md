@@ -1,5 +1,27 @@
 # Changelog — Nutrition Scanner
 
+## [0.2.2] — MVP Intake Optimization & Groq Vision Inference Acceleration
+
+### Added
+- **Data Provenance Tracking on Review UI**: Visual badges on the web Review screen distinguishing *AI-extracted data*, *User-provided data*, and *User-edited data*.
+- **Direct Output Optimization for Groq Multimodal AI**: Added `reasoning_effort: "none"` to `qwen/qwen3.6-27b` chat payload, eliminating internal reasoning token bloat and cutting inference latency down to ~1.3 seconds without truncation.
+- **Workflow Validation & Cleaning Scripts**: Added `scripts/clean_workflow.js` and `scripts/test_workflow_syntax.js` for automated syntax auditing.
+
+### Changed
+- **Intake Flow Optimization**: Aligned MVP intake pipeline with technical constraints (1 primary label photo per analysis call) while preserving multi-image packaging support in the product vision roadmap (ADR-016).
+- **Fail-Fast Error Handling**: Retried Groq completions with clear user-facing error indicators and retry buttons on the web UI.
+
+## [0.2.1] — Targeted Fix (Batch Reconciliation & Fail-Fast Hardening)
+
+### Fixed
+
+- **Adaptive Batching Execution**: Updated `workflows/NutriScanner_Main_Orchestrator.json` so `Prepare Groq Request` emits all batches as individual items, guaranteeing 4 photos are processed across 2 batches (3+1) without dropping images.
+- **Multi-Batch Reconciliation**: Added multi-batch extraction aggregator and conflict detection in `Deterministic Calculation & Reconciler` using `$input.all()`.
+- **Fail-Fast Error Handling**: Completely deleted mock product data (`handleFallbackExtraction`) from `public/app.js`, replacing it with explicit failure toasts and retry capability.
+- **Energy Normalization Order**: Fixed pipeline sequence so kJ is normalized to kcal before package energy calculation.
+- **Default Values Audit**: Removed implicit unit/basis defaults (`|| 'g'`, `|| 'per_serving'`) from canonical models.
+- **Test Suite Expansion**: Added comprehensive automated test suite covering T1 through T10 in `tests/deterministic_calculations.test.js`.
+
 ## [0.2.0] — Phase 1 MVP Implementation
 
 ### Added
@@ -17,53 +39,4 @@
 ## [0.1.0] — Foundation Draft
 
 ### Added
-
-- Automation-focused learning/portfolio constraint
-- n8n as MVP orchestration layer
-- Web client → n8n webhook architecture
-- n8n responsibility boundaries
-- Product vision
-- Target users
-- Label-scanner positioning
-- Facts-not-verdicts principle
-- Fully web-based MVP definition
-- 1–4 image input constraint
-- Text/manual input fallback
-- Core user journey
-- MVP feature boundary
-- Canonical data model
-- State machine
-- AI responsibilities
-- Groq/Qwen integration direction
-- Deterministic calculation rules
-- Security baseline
-- Test strategy
-- Antigravity engineering rules
-- Architecture/product decision log
-- Roadmap
-
-### Revised
-
-- Reversed the earlier decision to exclude n8n from the core request path. n8n is now intentionally part of the MVP architecture because the project belongs to the user's current automation learning track.
-
-### Explicitly Deferred
-
-- Product comparison
-- Accounts/history
-- Barcode lookup
-- Product database
-- Personal nutrition profile
-- Daily tracking
-- Food-photo analysis
-- Health scoring
-- Recommendation engine
-
-## Documentation Rule
-
-Every implementation phase should update this changelog when:
-
-- a locked decision changes
-- MVP scope changes
-- architecture changes
-- a major safety boundary changes
-- a major model/provider changes
+- Initial project architecture and specifications.

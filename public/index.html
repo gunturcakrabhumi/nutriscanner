@@ -72,11 +72,11 @@
                 </svg>
               </div>
               <h3 class="dropzone-title">Tarik & Letakkan foto label di sini</h3>
-              <p class="dropzone-hint">Maksimal 4 foto per analisis (Format JPG, PNG, WEBP)</p>
+              <p class="dropzone-hint">Unggah 1 foto terbaik label kemasan: Tabel Nilai Gizi atau Komposisi (Format JPG, PNG, WEBP)</p>
               <div class="dropzone-actions">
                 <button type="button" class="btn btn-primary" id="btnBrowseFiles">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  Pilih File Foto
+                  Pilih Foto Label
                 </button>
                 <button type="button" class="btn btn-secondary" id="btnOpenCamera" title="Ambil foto langsung jika perangkat mendukung">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -218,7 +218,10 @@
       <section id="screenReview" class="screen-view">
         <div class="section-header">
           <div>
-            <span class="badge badge-warning">Tahap Review</span>
+            <div class="d-flex items-center gap-2 mb-2">
+              <span class="badge badge-warning">Tahap Review</span>
+              <span class="badge badge-primary" id="reviewProvenanceBadge">Sumber: Ekstraksi AI</span>
+            </div>
             <h2 class="section-title">Periksa Hasil Ekstraksi</h2>
             <p class="section-desc">Silakan tinjau dan koreksi data yang terbaca dari label sebelum kalkulasi akhir dijalankan.</p>
           </div>

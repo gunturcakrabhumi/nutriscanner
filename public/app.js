@@ -5,21 +5,23 @@
 
 // Configuration
 const CONFIG = {
-  // Configurable n8n webhook endpoints
   ANALYZE_ENDPOINT: 'http://localhost:5678/webhook/api/analyze',
   CONFIRM_ENDPOINT: 'http://localhost:5678/webhook/api/analyze/confirm',
-  MAX_IMAGES: 4, // Strict product rule: Max 4 photos per session
+  // MVP Technical Constraint: 1 primary label photo per analysis call for fast & reliable inference
+  // Product Roadmap Vision: Multi-photo package analysis (1-4 images) is deferred to future phase
+  MAX_IMAGES: 1,
 };
 
 // Application State
 const state = {
-  currentScreen: 'screenIntake', // screenIntake | screenLoading | screenReview | screenResult
-  selectedFiles: [], // Array of File objects (1-4 max)
+  currentScreen: 'screenIntake',
+  selectedFiles: [], // Array of File objects (1 photo for MVP primary intake)
   activeTab: 'photo', // photo | text | manual
   cameraStream: null,
   sessionId: null,
   rawExtraction: null, // Candidate data returned from AI
   canonicalData: null, // Final confirmed & calculated data
+  isUserModified: false,
 };
 
 // DOM Elements
@@ -64,6 +66,7 @@ const elements = {
 
   // Review Screen
   btnBackToIntake: document.getElementById('btnBackToIntake'),
+  reviewProvenanceBadge: document.getElementById('reviewProvenanceBadge'),
   conflictBanner: document.getElementById('conflictBanner'),
   conflictListText: document.getElementById('conflictListText'),
   missingBanner: document.getElementById('missingBanner'),
@@ -139,33 +142,23 @@ function showToast(message, type = 'error') {
   elements.toastContainer.appendChild(toast);
   setTimeout(() => {
     toast.remove();
-  }, 4000);
+  }, 5000);
 }
 
 // ============================================================================
-// File Handling & Business Rule Validation (Max 4 images)
+// File Handling & Intake (MVP Single-Photo Primary Input)
 // ============================================================================
 
 function handleFilesAdded(files) {
   const fileArray = Array.from(files);
-  
-  // Validate Image Format
   const validFiles = fileArray.filter(f => f.type.startsWith('image/'));
   if (validFiles.length === 0) {
-    showToast('Harap pilih file gambar (JPG, PNG, WEBP).');
+    showToast('Harap pilih file gambar yang valid (JPG, PNG, WEBP).');
     return;
   }
 
-  // Enforce Strict Product Rule: Max 4 Images
-  if (state.selectedFiles.length + validFiles.length > CONFIG.MAX_IMAGES) {
-    showToast(`Maksimal ${CONFIG.MAX_IMAGES} foto per sesi analisis. Beberapa file tidak ditambahkan.`);
-  }
-
-  // Add files up to max limit
-  const availableSlots = CONFIG.MAX_IMAGES - state.selectedFiles.length;
-  const filesToAdd = validFiles.slice(0, availableSlots);
-  state.selectedFiles = state.selectedFiles.concat(filesToAdd);
-
+  // MVP single-photo intake
+  state.selectedFiles = [validFiles[0]];
   renderImagePreviews();
 }
 
@@ -181,7 +174,7 @@ function clearAllFiles() {
 
 function renderImagePreviews() {
   const count = state.selectedFiles.length;
-  elements.previewCount.textContent = `${count} dari ${CONFIG.MAX_IMAGES} foto terpilih`;
+  elements.previewCount.textContent = count > 0 ? '1 foto label terpilih' : '0 foto terpilih';
   elements.btnAnalyzePhotos.disabled = count === 0;
 
   if (count === 0) {
@@ -199,13 +192,13 @@ function renderImagePreviews() {
 
     const img = document.createElement('img');
     img.src = URL.createObjectURL(file);
-    img.alt = `Label foto ${idx + 1}`;
+    img.alt = 'Foto Label Produk';
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'preview-remove-btn';
     removeBtn.innerHTML = '&times;';
-    removeBtn.title = 'Hapus foto';
+    removeBtn.title = 'Ganti/Hapus foto';
     removeBtn.onclick = (e) => {
       e.stopPropagation();
       removeFile(idx);
@@ -227,7 +220,7 @@ elements.btnBrowseFiles.addEventListener('click', (e) => {
 elements.fileInput.addEventListener('change', (e) => {
   if (e.target.files.length) {
     handleFilesAdded(e.target.files);
-    e.target.value = ''; // Reset input
+    e.target.value = '';
   }
 });
 
@@ -282,12 +275,6 @@ function closeCamera() {
 }
 
 function capturePhotoFromCamera() {
-  if (state.selectedFiles.length >= CONFIG.MAX_IMAGES) {
-    showToast(`Maksimal ${CONFIG.MAX_IMAGES} foto per sesi.`);
-    closeCamera();
-    return;
-  }
-
   const canvas = elements.cameraCanvas;
   const video = elements.cameraVideo;
   canvas.width = video.videoWidth || 1280;
@@ -301,21 +288,53 @@ function capturePhotoFromCamera() {
       handleFilesAdded([file]);
     }
     closeCamera();
-  }, 'image/jpeg', 0.9);
+  }, 'image/jpeg', 0.85);
 }
 
 elements.btnOpenCamera.addEventListener('click', openCamera);
 elements.btnCloseCamera.addEventListener('click', closeCamera);
 elements.btnCapturePhoto.addEventListener('click', capturePhotoFromCamera);
 
-// Tab switching handlers
 elements.tabBtnPhoto.addEventListener('click', () => switchTab('photo'));
 elements.tabBtnText.addEventListener('click', () => switchTab('text'));
 elements.tabBtnManual.addEventListener('click', () => switchTab('manual'));
 
 // ============================================================================
-// Analysis Trigger & Webhook Communication
+// Analysis Trigger & Fail-Fast Webhook Communication (NO FAKE FALLBACK)
 // ============================================================================
+
+async function compressImageFile(file, maxDimension = 800, quality = 0.75) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+        } else {
+          resolve(file);
+        }
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
 
 async function triggerAnalysis(mode) {
   switchScreen('screenLoading');
@@ -324,9 +343,14 @@ async function triggerAnalysis(mode) {
   formData.append('mode', mode);
 
   if (mode === 'photo') {
-    state.selectedFiles.forEach((file, index) => {
-      formData.append(`image_${index}`, file, file.name);
-    });
+    if (state.selectedFiles.length === 0) {
+      showToast('Harap pilih 1 foto label kemasan.');
+      switchScreen('screenIntake');
+      return;
+    }
+    const originalFile = state.selectedFiles[0];
+    const compressedFile = await compressImageFile(originalFile);
+    formData.append('image_0', compressedFile, compressedFile.name);
   } else if (mode === 'text') {
     const text = elements.textInput.value.trim();
     if (!text) {
@@ -347,15 +371,22 @@ async function triggerAnalysis(mode) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+      const errJson = await response.json().catch(() => null);
+      const errMsg = errJson?.error?.message || `HTTP Error ${response.status}: ${response.statusText}`;
+      throw new Error(errMsg);
     }
 
     const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error.message || 'Ekstraksi label gagal.');
+    }
+
     handleExtractionResponse(data);
   } catch (error) {
-    console.warn('Live webhook error, utilizing fallback deterministic engine for demonstration:', error);
-    // Provide safe deterministic fallback if n8n is offline or during testing
-    handleFallbackExtraction(mode);
+    console.error('Extraction request failed:', error);
+    // Explicit Fail-Fast: Never inject fake/mock data!
+    switchScreen('screenIntake');
+    showToast(`Gagal memproses analisis label: ${error.message || 'Koneksi ke server n8n terputus.'} Silakan coba lagi.`, 'error');
   }
 }
 
@@ -367,7 +398,7 @@ function getManualFormData() {
     },
     serving: {
       size: parseFloat(document.getElementById('manualServingSize').value) || null,
-      unit: document.getElementById('manualServingUnit').value || 'g',
+      unit: document.getElementById('manualServingUnit').value || null,
       servings_per_container: parseFloat(document.getElementById('manualServingsPerContainer').value) || null,
     },
     nutrition: {
@@ -388,53 +419,36 @@ function getManualFormData() {
 function handleExtractionResponse(data) {
   state.sessionId = data.session_id || `session_${Date.now()}`;
   state.rawExtraction = data.extraction || data;
+  state.isUserModified = false;
 
-  populateReviewForm(state.rawExtraction);
-  switchScreen('screenReview');
-}
-
-function handleFallbackExtraction(mode) {
-  let fallbackData;
-
-  if (mode === 'manual') {
-    fallbackData = getManualFormData();
-  } else {
-    fallbackData = {
-      identity: { name: 'Contoh Biskuit Cokelat', brand: 'NutriFood' },
-      serving: { size: 25, unit: 'g', servings_per_container: 4 },
-      nutrition: {
-        energy: 120,
-        protein: 2,
-        total_fat: 4.5,
-        saturated_fat: 2,
-        carbohydrate: 18,
-        sugar: 7,
-        sodium: 85
-      },
-      ingredients: {
-        raw_text: 'Tepung terigu, gula pasir, minyak nabati, kakao bubuk, lesitin kedelai, perisa vanila.',
-        items: [
-          { name: 'Tepung terigu', role: 'Bahan dasar', description: 'Sumber karbohidrat utama dalam produk biskuit.' },
-          { name: 'Gula pasir', role: 'Pemanis', description: 'Memberikan rasa manis dan tekstur pada kue.' },
-          { name: 'Minyak nabati', role: 'Lemak / Minyak', description: 'Memberikan kelembutan dan tekstur renyah.' },
-          { name: 'Kakao bubuk', role: 'Perisa / Pewarna alami', description: 'Memberikan cita rasa dan warna cokelat.' },
-          { name: 'Lesitin kedelai', role: 'Pengemulsi', description: 'Membantu mencampur bahan lemak dan air secara merata.' }
-        ]
-      },
-      allergens: { explicit_declaration: 'Mengandung alergen: Tepung terigu (gluten), lesitin kedelai.' },
-      missing_information: [],
-      conflicts: []
-    };
+  // Set Provenance Badge
+  if (elements.reviewProvenanceBadge) {
+    if (data.source === 'user_provided') {
+      elements.reviewProvenanceBadge.textContent = 'Sumber: Input Manual';
+      elements.reviewProvenanceBadge.className = 'badge badge-secondary';
+    } else {
+      elements.reviewProvenanceBadge.textContent = 'Sumber: Ekstraksi AI';
+      elements.reviewProvenanceBadge.className = 'badge badge-primary';
+    }
   }
 
-  state.rawExtraction = fallbackData;
-  populateReviewForm(fallbackData);
+  populateReviewForm(state.rawExtraction);
   switchScreen('screenReview');
 }
 
 // ============================================================================
 // Review Screen & Correction
 // ============================================================================
+
+function markUserModified() {
+  if (!state.isUserModified) {
+    state.isUserModified = true;
+    if (elements.reviewProvenanceBadge) {
+      elements.reviewProvenanceBadge.textContent = 'Sumber: Telah Diedit Pengguna';
+      elements.reviewProvenanceBadge.className = 'badge badge-warning';
+    }
+  }
+}
 
 function populateReviewForm(data) {
   const id = data.identity || {};
@@ -460,18 +474,31 @@ function populateReviewForm(data) {
   elements.reviewIngredients.value = ing.raw_text || '';
   elements.reviewAllergens.value = allg.explicit_declaration || '';
 
+  // Attach change listener to update provenance
+  const reviewInputs = [
+    elements.reviewName, elements.reviewBrand, elements.reviewServingSize,
+    elements.reviewServingUnit, elements.reviewServingsPerContainer, elements.reviewEnergy,
+    elements.reviewProtein, elements.reviewTotalFat, elements.reviewSatFat,
+    elements.reviewCarb, elements.reviewSugar, elements.reviewSodium,
+    elements.reviewIngredients, elements.reviewAllergens
+  ];
+  reviewInputs.forEach(input => {
+    input.removeEventListener('input', markUserModified);
+    input.addEventListener('input', markUserModified);
+  });
+
   // Handle Conflicts Display
   if (data.conflicts && data.conflicts.length > 0) {
     elements.conflictBanner.classList.remove('hidden');
-    elements.conflictListText.textContent = data.conflicts.map(c => `${c.field}: ${c.values.join(' vs ')}`).join(' | ');
+    elements.conflictListText.textContent = data.conflicts.map(c => `${c.message || `${c.field}: ${c.values.join(' vs ')}`}`).join(' | ');
   } else {
     elements.conflictBanner.classList.add('hidden');
   }
 
-  // Handle Missing Information Display
+  // Handle Missing Information Display (Information Not Available)
   if (data.missing_information && data.missing_information.length > 0) {
     elements.missingBanner.classList.remove('hidden');
-    elements.missingList.innerHTML = data.missing_information.map(m => `<li>${m}</li>`).join('');
+    elements.missingList.innerHTML = data.missing_information.map(m => `<li>${escapeHtml(m)}</li>`).join('');
   } else {
     elements.missingBanner.classList.add('hidden');
   }
@@ -502,7 +529,7 @@ function confirmReviewAndFinalize() {
     },
     serving: {
       size: parseInputVal(elements.reviewServingSize),
-      unit: elements.reviewServingUnit.value || 'g',
+      unit: elements.reviewServingUnit.value || null,
       servings_per_container: parseInputVal(elements.reviewServingsPerContainer),
     },
     nutrition: {
@@ -520,159 +547,187 @@ function confirmReviewAndFinalize() {
     },
     allergens: {
       explicit_declaration: elements.reviewAllergens.value.trim() || null,
+      items: state.rawExtraction?.allergens?.items || [],
     },
-    missing_information: state.rawExtraction?.missing_information || [],
+    missing_information: state.rawExtraction?.missing_information || []
   };
 
-  // Perform Strictly Deterministic Nutrition Calculation
-  // Formula: Package Total = Nutrient per Serving * Servings per Container
+  // Run Strict Deterministic Calculation
   const servings = confirmedData.serving.servings_per_container;
+  const canCalculatePackage = (typeof servings === 'number' && servings > 0);
+
   const calculatedPackage = {};
+  const standardNutrients = ['energy', 'protein', 'total_fat', 'saturated_fat', 'carbohydrate', 'sugar', 'sodium'];
 
-  if (servings !== null && servings > 0) {
-    for (const [nutrientKey, perServingVal] of Object.entries(confirmedData.nutrition)) {
-      if (perServingVal !== null && typeof perServingVal === 'number') {
-        // Deterministic package calculation
-        calculatedPackage[nutrientKey] = roundDecimals(perServingVal * servings, 2);
-      } else {
-        calculatedPackage[nutrientKey] = null;
-      }
+  standardNutrients.forEach(nutr => {
+    const valPerServing = confirmedData.nutrition[nutr];
+    if (typeof valPerServing === 'number' && canCalculatePackage) {
+      // Deterministic math: nutrient per serving * servings per container
+      calculatedPackage[nutr] = Math.round((valPerServing * servings) * 100) / 100;
+    } else {
+      calculatedPackage[nutr] = null;
     }
-  }
+  });
 
-  confirmedData.calculated = {
-    package: calculatedPackage,
-    canCalculatePackage: servings !== null && servings > 0
+  state.canonicalData = {
+    identity: confirmedData.identity,
+    serving: confirmedData.serving,
+    nutrition: confirmedData.nutrition,
+    calculated: {
+      package: calculatedPackage,
+      can_calculate_package: canCalculatePackage,
+    },
+    ingredients: confirmedData.ingredients,
+    allergens: confirmedData.allergens,
+    missing_information: confirmedData.missing_information,
+    source: state.isUserModified ? 'user_edited' : (state.rawExtraction?.source || 'ai_extracted')
   };
 
-  state.canonicalData = confirmedData;
-  displayResults(confirmedData);
+  renderResultScreen(state.canonicalData);
   switchScreen('screenResult');
 }
 
 function parseIngredientsFromText(text) {
   if (!text) return [];
-  return text.split(/[,;\n]/)
-    .map(t => t.trim())
-    .filter(t => t.length > 0)
-    .map(name => ({
-      name: name,
-      role: 'Komposisi',
-      description: `Bahan tertera pada komposisi produk.`
-    }));
+  return text.split(',').map(s => s.trim()).filter(Boolean).map(name => ({
+    name,
+    role: null,
+    description: null
+  }));
 }
 
-function roundDecimals(num, decimals = 2) {
-  const factor = Math.pow(10, decimals);
-  return Math.round(num * factor) / factor;
-}
+// ============================================================================
+// Render Fact-Based Nutrition Table & Neutral Summary
+// ============================================================================
 
-function displayResults(data) {
-  const id = data.identity;
-  const s = data.serving;
-  const n = data.nutrition;
-  const calc = data.calculated;
+function renderResultScreen(data) {
+  const id = data.identity || {};
+  const s = data.serving || {};
+  const n = data.nutrition || {};
+  const calc = data.calculated?.package || {};
+  const canCalc = data.calculated?.can_calculate_package;
+  const ing = data.ingredients || {};
+  const allg = data.allergens || {};
 
-  elements.resProductName.textContent = id.name || 'Produk Tanpa Nama';
-  elements.resProductBrand.textContent = id.brand ? `Brand / Produsen: ${id.brand}` : 'Brand tidak tertera';
+  elements.resProductName.textContent = id.name || 'Produk Makanan / Minuman';
+  elements.resProductBrand.textContent = id.brand ? `Brand: ${id.brand}` : '';
 
-  // Neutral Summary
-  let summaryText = `Produk dengan takaran saji ${s.size || '-'} ${s.unit || 'g'}.`;
-  if (n.energy !== null) summaryText += ` Menyediakan energi ${n.energy} kkal per sajian.`;
-  if (calc.canCalculatePackage && calc.package.energy !== null) {
-    summaryText += ` Satu kemasan (${s.servings_per_container} sajian) mengandung total energi ${calc.package.energy} kkal.`;
-  }
-  elements.resNeutralSummary.textContent = summaryText;
-
-  // Context Badges
-  elements.resServingSize.textContent = s.size ? `${s.size} ${s.unit}` : 'Tidak tertera';
-  elements.resServingsCount.textContent = s.servings_per_container ? `${s.servings_per_container} sajian` : 'Tidak tertera';
-  
-  if (calc.canCalculatePackage) {
-    elements.resCalcStatus.textContent = 'Dihitung Lengkap';
-    elements.resCalcHint.textContent = `Dikalikan dengan ${s.servings_per_container} sajian`;
+  // Serving info
+  if (s.size) {
+    elements.resServingSize.textContent = `${s.size} ${s.unit || 'g'}`;
   } else {
-    elements.resCalcStatus.textContent = 'Tidak Tersedia';
-    elements.resCalcHint.textContent = 'Jumlah sajian per kemasan tidak tertera di label';
+    elements.resServingSize.textContent = 'Tidak tertera';
   }
 
-  // Nutrition Table Rows
-  const nutrientsList = [
-    { key: 'energy', label: 'Energi Total', unit: 'kkal' },
-    { key: 'protein', label: 'Protein', unit: 'g' },
-    { key: 'total_fat', label: 'Lemak Total', unit: 'g' },
-    { key: 'saturated_fat', label: 'Lemak Jenuh', unit: 'g' },
-    { key: 'carbohydrate', label: 'Karbohidrat Total', unit: 'g' },
-    { key: 'sugar', label: 'Gula', unit: 'g' },
-    { key: 'sodium', label: 'Natrium', unit: 'mg' },
+  if (s.servings_per_container) {
+    elements.resServingsCount.textContent = `${s.servings_per_container} sajian`;
+  } else {
+    elements.resServingsCount.textContent = 'Tidak tertera';
+  }
+
+  // Calculation status banner
+  if (canCalc) {
+    elements.resCalcStatus.textContent = `Dihitung untuk ${s.servings_per_container} sajian per kemasan`;
+    elements.resCalcHint.textContent = 'Perhitungan: Nilai per sajian × Jumlah sajian per kemasan';
+  } else {
+    elements.resCalcStatus.textContent = 'Kalkulasi total kemasan ditiadakan';
+    elements.resCalcHint.textContent = 'Jumlah sajian per kemasan tidak tercantum pada label.';
+  }
+
+  // Nutrition Facts Table Rows (Neutral, Facts only)
+  const rows = [
+    { label: 'Energi Total', unit: 'kkal', key: 'energy' },
+    { label: 'Protein', unit: 'g', key: 'protein' },
+    { label: 'Lemak Total', unit: 'g', key: 'total_fat' },
+    { label: 'Lemak Jenuh', unit: 'g', key: 'saturated_fat' },
+    { label: 'Karbohidrat Total', unit: 'g', key: 'carbohydrate' },
+    { label: 'Gula', unit: 'g', key: 'sugar' },
+    { label: 'Natrium', unit: 'mg', key: 'sodium' },
   ];
 
-  elements.nutriTableBody.innerHTML = '';
-  nutrientsList.forEach(item => {
-    const valServing = n[item.key];
-    const valPkg = calc.canCalculatePackage ? calc.package[item.key] : null;
+  elements.nutriTableBody.innerHTML = rows.map(r => {
+    const valServing = n[r.key];
+    const valPkg = calc[r.key];
 
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td class="nutrient-name">${item.label}</td>
-      <td class="nutrient-val-per-serving">${valServing !== null ? `${valServing} ${item.unit}` : '<span class="text-muted">Tidak tertera</span>'}</td>
-      <td class="nutrient-val-per-package">${valPkg !== null ? `${valPkg} ${item.unit}` : '<span class="text-muted">-</span>'}</td>
-      <td>${valServing !== null ? 'Fakta label' : 'Tidak tersedia pada label'}</td>
+    const servingStr = (typeof valServing === 'number') ? `${valServing} ${r.unit}` : '-';
+    const pkgStr = (typeof valPkg === 'number') ? `${valPkg} ${r.unit}` : '-';
+
+    return `
+      <tr>
+        <td class="table-nutrient-name">${escapeHtml(r.label)}</td>
+        <td class="table-nutrient-val">${escapeHtml(servingStr)}</td>
+        <td class="table-nutrient-val text-package">${escapeHtml(pkgStr)}</td>
+      </tr>
     `;
-    elements.nutriTableBody.appendChild(row);
-  });
+  }).join('');
 
-  // Ingredients List
-  elements.ingredientList.innerHTML = '';
-  const items = data.ingredients.items || [];
-  if (items.length > 0) {
-    items.forEach(ing => {
-      const itemEl = document.createElement('div');
-      itemEl.className = 'ingredient-item';
-      itemEl.innerHTML = `
-        <div class="ingredient-header">
-          <span class="ingredient-title">${escapeHtml(ing.name)}</span>
-          <span class="ingredient-role-badge">${escapeHtml(ing.role || 'Bahan')}</span>
-        </div>
-        <p class="ingredient-desc">${escapeHtml(ing.description || 'Bahan tertera pada kemasan.')}</p>
-      `;
-      elements.ingredientList.appendChild(itemEl);
-    });
+  // Neutral Summary (Facts only, zero health judgments/scoring)
+  const summaryLines = [];
+  if (typeof n.energy === 'number') {
+    summaryLines.push(`Produk ini mengandung <strong>${n.energy} kkal</strong> energi per sajian${canCalc && typeof calc.energy === 'number' ? ` (total <strong>${calc.energy} kkal</strong> per kemasan)` : ''}.`);
+  }
+  if (typeof n.sugar === 'number') {
+    summaryLines.push(`Kandungan gula tercatat <strong>${n.sugar} g</strong> per sajian${canCalc && typeof calc.sugar === 'number' ? ` (total <strong>${calc.sugar} g</strong> per kemasan)` : ''}.`);
+  }
+  if (typeof n.sodium === 'number') {
+    summaryLines.push(`Kandungan natrium tercatat <strong>${n.sodium} mg</strong> per sajian${canCalc && typeof calc.sodium === 'number' ? ` (total <strong>${calc.sodium} mg</strong> per kemasan)` : ''}.`);
+  }
+  if (summaryLines.length === 0) {
+    summaryLines.push('Informasi gizi berhasil diekstraksi dari label produk.');
+  }
+
+  elements.resNeutralSummary.innerHTML = summaryLines.map(line => `<p class="summary-item">${line}</p>`).join('');
+
+  // Ingredients list
+  if (ing.items && ing.items.length > 0) {
+    elements.ingredientList.innerHTML = ing.items.map(item => `
+      <div class="ingredient-badge">
+        <span class="ingredient-name">${escapeHtml(item.name)}</span>
+        ${item.role ? `<span class="ingredient-role">(${escapeHtml(item.role)})</span>` : ''}
+      </div>
+    `).join('');
+  } else if (ing.raw_text) {
+    elements.ingredientList.innerHTML = `<p class="text-sm text-secondary">${escapeHtml(ing.raw_text)}</p>`;
   } else {
-    elements.ingredientList.innerHTML = '<p class="text-muted">Daftar komposisi tidak tertera pada foto/teks yang diberikan.</p>';
+    elements.ingredientList.innerHTML = '<p class="text-sm text-muted">Daftar komposisi tidak terdeteksi pada label.</p>';
   }
 
   // Allergens
-  if (data.allergens && data.allergens.explicit_declaration) {
-    elements.allergenSection.style.display = 'block';
-    elements.allergenContent.textContent = data.allergens.explicit_declaration;
+  if (allg.explicit_declaration) {
+    elements.allergenSection.classList.remove('hidden');
+    elements.allergenContent.innerHTML = `<p class="text-sm font-semibold">${escapeHtml(allg.explicit_declaration)}</p>`;
   } else {
-    elements.allergenSection.style.display = 'none';
+    elements.allergenSection.classList.add('hidden');
   }
 
-  // Missing facts
-  const missingItems = [];
-  if (!s.servings_per_container) missingItems.push('Jumlah sajian per kemasan tidak tercantum (kalkulasi total kemasan tidak dapat dihitung).');
-  if (!data.ingredients.raw_text) missingItems.push('Daftar komposisi bahan tidak ditemukan pada label.');
-  if (n.sugar === null) missingItems.push('Kandungan gula tidak tertera pada tabel gizi.');
-  if (n.sodium === null) missingItems.push('Kandungan natrium tidak tertera pada tabel gizi.');
-
+  // Missing Information Section (Honesty in lack of data)
+  const missingItems = data.missing_information || [];
   if (missingItems.length > 0) {
-    elements.missingSection.style.display = 'block';
+    elements.missingSection.classList.remove('hidden');
     elements.missingFactsList.innerHTML = missingItems.map(m => `<li>${escapeHtml(m)}</li>`).join('');
   } else {
-    elements.missingSection.style.display = 'none';
+    elements.missingSection.classList.add('hidden');
   }
 }
 
 function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>"']/g, function(m) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+  if (typeof str !== 'string') return String(str || '');
+  return str.replace(/[&<>"']/g, function (m) {
+    switch (m) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#039;';
+      default: return m;
+    }
   });
 }
 
-// Event Listeners for Analysis Triggers
+// ============================================================================
+// Event Bindings
+// ============================================================================
+
 elements.btnAnalyzePhotos.addEventListener('click', () => triggerAnalysis('photo'));
 elements.btnAnalyzeText.addEventListener('click', () => triggerAnalysis('text'));
 elements.btnAnalyzeManual.addEventListener('click', () => triggerAnalysis('manual'));
@@ -681,9 +736,24 @@ elements.btnBackToIntake.addEventListener('click', () => switchScreen('screenInt
 elements.btnConfirmReview.addEventListener('click', confirmReviewAndFinalize);
 elements.btnScanAnother.addEventListener('click', () => {
   clearAllFiles();
-  elements.textInput.value = '';
   switchScreen('screenIntake');
 });
 
-// Initialize on page load
-switchTab('photo');
+// Initialize System Status Check
+async function checkHealth() {
+  try {
+    const res = await fetch('http://localhost:5678/healthz');
+    if (res.ok) {
+      elements.systemStatus.className = 'status-indicator status-ready';
+      elements.systemStatus.innerHTML = '<span class="status-dot"></span> Sistem Siap';
+    } else {
+      elements.systemStatus.className = 'status-indicator status-warning';
+      elements.systemStatus.innerHTML = '<span class="status-dot"></span> Server Terhubung';
+    }
+  } catch (e) {
+    elements.systemStatus.className = 'status-indicator status-error';
+    elements.systemStatus.innerHTML = '<span class="status-dot"></span> Server n8n Offline';
+  }
+}
+
+checkHealth();

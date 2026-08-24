@@ -136,9 +136,10 @@ The application does not assign a numerical health/nutrition score.
 
 ---
 
-## ADR-016 — Four User Images (Product Rule) and Model-Aware Batching (Provider Adaptation)
+## ADR-016 — Multi-Photo Package Analysis (Product Roadmap Vision) and MVP Single-Photo Intake (Technical Constraint)
 
-**Status:** Accepted
+**Status:** Accepted for MVP with Roadmap Vision Preserved
 
-Product business rule allows the user to submit 1–4 images per analysis session. 
-Provider-specific constraints (e.g., Groq/Qwen current limit of 3 input images per request) are handled adaptively in the n8n orchestration workflow via batching and reconciliation without restricting or altering the product-level 4-image capability.
+1. **Product Roadmap Vision**: The product vision retains support for multi-side food packaging analysis (1–4 images per session).
+2. **MVP Implementation Constraint**: For the initial MVP, AI extraction uses 1 primary photo per analysis call (e.g. Nutrition Facts or Ingredients table) to ensure fast, reliable response times (< 3s observed target) and avoid provider rate limit throttling (Groq 8k TPM).
+3. **Deferred Capability**: Multi-image batching and full-package multi-photo reconciliation are preserved in the roadmap and deferred to future phases when provider throughput or dedicated inference tiers permit.

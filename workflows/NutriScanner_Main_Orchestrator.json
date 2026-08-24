@@ -13,34 +13,55 @@
       "name": "Webhook Intake",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [220, 300],
+      "position": [
+        220,
+        300
+      ],
       "id": "webhook-intake-01"
     },
     {
       "parameters": {
-        "jsCode": "// NutriScanner — Input Validator, Business Rule Guard, and Adaptive Batching\nconst body = $input.item.json.body || $input.item.json;\nconst binaryData = $input.item.binary || {};\nconst mode = body.mode || (Object.keys(binaryData).length > 0 ? 'photo' : 'text');\n\n// Strict Product Rule: Max 4 photos per session\nconst MAX_PRODUCT_IMAGES = 4;\n// Provider Implementation Constraint: Adaptive batching limit (e.g. 3 images per request on Groq Qwen)\nconst PROVIDER_BATCH_LIMIT = 3;\n\nif (mode === 'photo') {\n  const binaryKeys = Object.keys(binaryData);\n  const imageCount = binaryKeys.length;\n\n  if (imageCount === 0) {\n    return [{\n      json: {\n        is_error: true,\n        error: {\n          code: 'INVALID_INPUT',\n          message: 'Setidaknya satu foto label harus disediakan.',\n          retryable: false\n        }\n      }\n    }];\n  }\n\n  if (imageCount > MAX_PRODUCT_IMAGES) {\n    return [{\n      json: {\n        is_error: true,\n        error: {\n          code: 'TOO_MANY_IMAGES',\n          message: `Maksimal ${MAX_PRODUCT_IMAGES} foto per sesi analisis. Ditemukan ${imageCount} foto.`,\n          retryable: false\n        }\n      }\n    }];\n  }\n\n  // Prepare batches according to PROVIDER_BATCH_LIMIT\n  const batches = [];\n  for (let i = 0; i < imageCount; i += PROVIDER_BATCH_LIMIT) {\n    const batchKeys = binaryKeys.slice(i, i + PROVIDER_BATCH_LIMIT);\n    const imageContents = batchKeys.map(k => {\n      const file = binaryData[k];\n      return {\n        type: 'image_url',\n        image_url: {\n          url: `data:${file.mimeType || 'image/jpeg'};base64,${file.data}`\n        }\n      };\n    });\n    batches.push(imageContents);\n  }\n\n  return [{\n    json: {\n      mode: 'photo',\n      image_count: imageCount,\n      batch_count: batches.length,\n      batches: batches,\n      session_id: `nutri_${Date.now()}`,\n      is_error: false\n    }\n  }];\n} else if (mode === 'text') {\n  const labelText = body.text || '';\n  if (!labelText.trim()) {\n    return [{\n      json: {\n        is_error: true,\n        error: {\n          code: 'INVALID_INPUT',\n          message: 'Teks label tidak boleh kosong.',\n          retryable: false\n        }\n      }\n    }];\n  }\n\n  return [{\n    json: {\n      mode: 'text',\n      text: labelText,\n      session_id: `nutri_${Date.now()}`,\n      is_error: false\n    }\n  }];\n} else if (mode === 'manual') {\n  let manualData = body.manual;\n  if (typeof manualData === 'string') {\n    try { manualData = JSON.parse(manualData); } catch (e) {}\n  }\n  return [{\n    json: {\n      mode: 'manual',\n      manual: manualData || {},\n      session_id: `nutri_${Date.now()}`,\n      is_error: false\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    is_error: true,\n    error: {\n      code: 'INVALID_INPUT',\n      message: 'Mode input tidak dikenali (harus photo, text, atau manual).',\n      retryable: false\n    }\n  }\n}];"
+        "jsCode": "// NutriScanner — Input Validator & MVP Primary Intake Guard\nconst body = $input.item.json.body || $input.item.json;\nconst binaryData = $input.item.binary || {};\nconst mode = body.mode || (Object.keys(binaryData).length > 0 ? 'photo' : 'text');\n\n// MVP Technical Constraint: 1 primary label photo per analysis call for fast & reliable inference\n// Product Roadmap Vision: Multi-photo package analysis (1-4 images) is deferred to future phase\nconst MVP_PHOTO_LIMIT = 1;\n\nif (mode === 'photo') {\n  const binaryKeys = Object.keys(binaryData);\n  const imageCount = binaryKeys.length;\n\n  if (imageCount === 0) {\n    return [{\n      json: {\n        is_error: true,\n        error: {\n          code: 'INVALID_INPUT',\n          message: 'Setidaknya satu foto label harus disediakan.',\n          retryable: false\n        }\n      }\n    }];\n  }\n\n  if (imageCount > MVP_PHOTO_LIMIT) {\n    return [{\n      json: {\n        is_error: true,\n        error: {\n          code: 'TOO_MANY_IMAGES',\n          message: `Pada fase MVP saat ini, analisis AI menerima 1 foto terbaik per sesi (misal tabel gizi atau komposisi). Ditemukan ${imageCount} foto.`,\n          retryable: false\n        }\n      }\n    }];\n  }\n\n  const k = binaryKeys[0];\n  const file = binaryData[k];\n  let b64 = file.data;\n  if (b64 === 'filesystem-v2' || !b64 || b64.length < 50) {\n    try {\n      const buf = await this.helpers.getBinaryDataBuffer(0, k);\n      b64 = buf.toString('base64');\n    } catch (e) {\n      console.error(`Error reading binary buffer for ${k}:`, e);\n    }\n  }\n\n  return [{\n    json: {\n      mode: 'photo',\n      image_count: 1,\n      session_id: `nutri_${Date.now()}`,\n      image_url: `data:${file.mimeType || 'image/jpeg'};base64,${b64}`,\n      is_error: false\n    }\n  }];\n} else if (mode === 'text') {\n  const labelText = body.text || '';\n  if (!labelText.trim()) {\n    return [{\n      json: {\n        is_error: true,\n        error: {\n          code: 'INVALID_INPUT',\n          message: 'Teks label tidak boleh kosong.',\n          retryable: false\n        }\n      }\n    }];\n  }\n\n  return [{\n    json: {\n      mode: 'text',\n      text: labelText,\n      session_id: `nutri_${Date.now()}`,\n      is_error: false\n    }\n  }];\n} else if (mode === 'manual') {\n  let manualData = body.manual;\n  if (typeof manualData === 'string') {\n    try { manualData = JSON.parse(manualData); } catch (e) {}\n  }\n  return [{\n    json: {\n      mode: 'manual',\n      manual: manualData || {},\n      session_id: `nutri_${Date.now()}`,\n      is_error: false\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    is_error: true,\n    error: {\n      code: 'INVALID_INPUT',\n      message: 'Mode input tidak dikenali (harus photo, text, atau manual).',\n      retryable: false\n    }\n  }\n}];"
       },
-      "name": "Validate & Batch Intake",
+      "name": "Validate Intake",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 300],
+      "position": [
+        440,
+        300
+      ],
       "id": "code-validate-intake-02"
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.is_error }}",
-              "value2": true
+              "id": "c-has-err",
+              "leftValue": "={{ Boolean($json.is_error) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "name": "Has Validation Error?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [660, 300],
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        300
+      ],
       "id": "if-validation-error-03"
     },
     {
@@ -54,42 +75,63 @@
       "name": "Respond Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [880, 160],
+      "position": [
+        880,
+        160
+      ],
       "id": "respond-error-04"
     },
     {
       "parameters": {
-        "jsCode": "// Prepare AI Payload for Groq Multimodal / Text Extraction\nconst data = $input.item.json;\nconst mode = data.mode;\n\nconst systemPrompt = `Anda adalah asisten ekstraksi data fakta label kemasan makanan/minuman yang sangat teliti, netral, dan patuh pada prinsip 'Facts, not verdicts'.\n\nTUGAS:\nEkstrak seluruh informasi yang terlihat pada label ke dalam format JSON tunggal sesuai skema.\n\nATURAN MUTLAK:\n1. Ekstrak HANYA informasi yang terlihat atau terbaca secara eksplisit.\n2. JANGAN PERNAH mengarang, menebak, atau menambahkan informasi yang tidak ada. Jika suatu nilai (misal gula, natrium, takaran saji) tidak tertera di label, kembalikan null.\n3. JANGAN memberikan penilaian kesehatan, skor nutrisi, atau kata 'sehat' / 'tidak sehat'.\n4. Jangan melakukan perhitungan aritmatika; salin angka dan unit persis sebagaimana tertulis di label.\n5. Pisahkan deklarasi alergen eksplisit (misal 'Mengandung alergen: susu') dari sekadar penyebutan bahan di komposisi.\n6. Catat daftar 'missing_information' jika ada elemen penting yang tidak ditemukan pada label.\n\nSKEMA JSON HARUS PERSIS SEPERTI INI:\n{\n  \"identity\": {\n    \"name\": string | null,\n    \"brand\": string | null,\n    \"category\": string | null\n  },\n  \"serving\": {\n    \"size\": number | null,\n    \"unit\": string | null,\n    \"servings_per_container\": number | null,\n    \"basis\": \"per_serving\" | \"per_100g\" | \"per_100ml\" | \"per_package\" | null\n  },\n  \"nutrition\": {\n    \"energy\": number | null,\n    \"protein\": number | null,\n    \"total_fat\": number | null,\n    \"saturated_fat\": number | null,\n    \"carbohydrate\": number | null,\n    \"sugar\": number | null,\n    \"sodium\": number | null,\n    \"additional\": []\n  },\n  \"ingredients\": {\n    \"raw_text\": string | null,\n    \"items\": [\n      {\n        \"name\": string,\n        \"role\": string | null,\n        \"description\": string | null\n      }\n    ]\n  },\n  \"allergens\": {\n    \"explicit_declaration\": string | null,\n    \"items\": []\n  },\n  \"missing_information\": string[],\n  \"conflicts\": []\n}`;\n\nif (mode === 'photo') {\n  // For first batch of images\n  const firstBatch = data.batches[0];\n  const messages = [\n    { role: 'system', content: systemPrompt },\n    {\n      role: 'user',\n      content: [\n        { type: 'text', text: 'Ekstrak tabel nilai gizi dan komposisi dari foto-foto label ini ke format JSON.' },\n        ...firstBatch\n      ]\n    }\n  ];\n\n  return [{\n    json: {\n      ...data,\n      groq_payload: {\n        model: 'qwen/qwen3.6-27b',\n        messages: messages,\n        response_format: { type: 'json_object' },\n        temperature: 0.1\n      }\n    }\n  }];\n} else if (mode === 'text') {\n  const messages = [\n    { role: 'system', content: systemPrompt },\n    {\n      role: 'user',\n      content: `Ekstrak data gizi dan komposisi dari teks label berikut:\\n\\n${data.text}`\n    }\n  ];\n  return [{\n    json: {\n      ...data,\n      groq_payload: {\n        model: 'qwen/qwen3.6-27b',\n        messages: messages,\n        response_format: { type: 'json_object' },\n        temperature: 0.1\n      }\n    }\n  }];\n} else {\n  // Manual mode\n  return [{\n    json: {\n      ...data,\n      extraction: data.manual\n    }\n  }];\n}"
+        "jsCode": "// Prepare Groq AI Payload for MVP Single-Image Extraction\nconst data = $input.item.json;\nconst mode = data.mode;\n\nconst promptInstruction = `Anda adalah asisten ekstraksi data fakta label kemasan makanan/minuman yang sangat teliti, netral, dan patuh pada prinsip 'Facts, not verdicts'.\n\nTUGAS:\nEkstrak seluruh informasi yang terlihat pada label ke dalam format JSON tunggal sesuai skema.\n\nATURAN MUTLAK:\n1. Ekstrak HANYA informasi yang terlihat atau terbaca secara eksplisit.\n2. JANGAN PERNAH mengarang, menebak, atau menambahkan informasi yang tidak ada. Jika suatu nilai (misal gula, natrium, takaran saji) tidak tertera di label, kembalikan null.\n3. JANGAN memberikan penilaian kesehatan, skor nutrisi, atau kata 'sehat' / 'tidak sehat'.\n4. Jangan melakukan perhitungan aritmatika; salin angka dan unit persis sebagaimana tertulis di label.\n5. Pisahkan deklarasi alergen eksplisit (misal 'Mengandung alergen: susu') dari sekadar penyebutan bahan di komposisi.\n6. Catat daftar 'missing_information' jika ada elemen penting yang tidak ditemukan pada label.\n7. Kembalikan HANYA objek JSON valid sesuai skema berikut tanpa teks pembuka atau penutup.\n\nSchema:\n{\n  \"identity\": {\n    \"name\": string | null,\n    \"brand\": string | null,\n    \"category\": string | null\n  },\n  \"serving\": {\n    \"size\": number | null,\n    \"unit\": string | null,\n    \"servings_per_container\": number | null,\n    \"basis\": \"per_serving\" | \"per_100g\" | \"per_100ml\" | \"per_package\" | null\n  },\n  \"nutrition\": {\n    \"energy\": number | null,\n    \"energy_kj\": number | null,\n    \"protein\": number | null,\n    \"total_fat\": number | null,\n    \"saturated_fat\": number | null,\n    \"carbohydrate\": number | null,\n    \"sugar\": number | null,\n    \"sodium\": number | null,\n    \"additional\": []\n  },\n  \"ingredients\": {\n    \"raw_text\": string | null,\n    \"items\": [\n      {\n        \"name\": string,\n        \"role\": string | null,\n        \"description\": string | null\n      }\n    ]\n  },\n  \"allergens\": {\n    \"explicit_declaration\": string | null,\n    \"items\": []\n  },\n  \"missing_information\": string[],\n  \"conflicts\": []\n}`;\n\nif (mode === 'photo') {\n  return [{\n    json: {\n      session_id: data.session_id,\n      mode: 'photo',\n      groq_payload: {\n        model: 'qwen/qwen3.6-27b',\n        messages: [\n          {\n            role: 'user',\n            content: [\n              {\n                type: 'text',\n                text: `${promptInstruction}\n\nEkstrak data gizi dan komposisi dari foto label ini ke format JSON.`\n              },\n              {\n                type: 'image_url',\n                image_url: {\n                  url: data.image_url\n                }\n              }\n            ]\n          }\n        ],\n        reasoning_effort: 'none',\n        max_completion_tokens: 1500,\n        temperature: 0.2\n      }\n    }\n  }];\n} else if (mode === 'text') {\n  return [{\n    json: {\n      session_id: data.session_id,\n      mode: 'text',\n      groq_payload: {\n        model: 'qwen/qwen3.6-27b',\n        messages: [\n          {\n            role: 'user',\n            content: `${promptInstruction}\n\nEkstrak data gizi dan komposisi dari teks label berikut ke format JSON:\n\n${data.text}`\n          }\n        ],\n        reasoning_effort: 'none',\n        max_completion_tokens: 1500,\n        temperature: 0.2\n      }\n    }\n  }];\n} else {\n  return [{\n    json: {\n      session_id: data.session_id,\n      mode: 'manual',\n      extraction: data.manual\n    }\n  }];\n}"
       },
       "name": "Prepare Groq Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 440],
+      "position": [
+        880,
+        440
+      ],
       "id": "code-prepare-groq-05"
     },
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.mode }}",
-              "value2": "manual"
+              "id": "c-is-manual",
+              "leftValue": "={{ $json.mode }}",
+              "rightValue": "manual",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
       "name": "Is Manual Mode?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [1100, 440],
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        440
+      ],
       "id": "if-manual-mode-06"
     },
     {
       "parameters": {
         "method": "POST",
         "url": "https://api.groq.com/openai/v1/chat/completions",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.groq_payload) }}",
@@ -97,20 +139,32 @@
           "timeout": 30000
         }
       },
+      "credentials": {
+        "groqApi": {
+          "id": "KNg1iqS0Wk0NPtLD",
+          "name": "Groq account"
+        }
+      },
       "name": "Call Groq Multimodal AI",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 520],
+      "position": [
+        1320,
+        520
+      ],
       "id": "http-groq-ai-07"
     },
     {
       "parameters": {
-        "jsCode": "// NutriScanner — Schema Validation & Deterministic Calculation Engine\nlet rawExtraction = {};\nconst inputData = $input.item.json;\n\nif (inputData.mode === 'manual') {\n  rawExtraction = inputData.extraction || {};\n} else {\n  try {\n    const responseContent = inputData.choices?.[0]?.message?.content || '{}';\n    rawExtraction = JSON.parse(responseContent);\n  } catch (err) {\n    rawExtraction = {\n      identity: { name: null, brand: null },\n      serving: { size: null, unit: 'g', servings_per_container: null },\n      nutrition: { energy: null, protein: null, total_fat: null, saturated_fat: null, carbohydrate: null, sugar: null, sodium: null },\n      ingredients: { raw_text: null, items: [] },\n      allergens: { explicit_declaration: null },\n      missing_information: ['Gagal melakukan parsing JSON ekstraksi AI.'],\n      conflicts: []\n    };\n  }\n}\n\n// Ensure default structures\nconst identity = rawExtraction.identity || {};\nconst serving = rawExtraction.serving || {};\nconst nutrition = rawExtraction.nutrition || {};\nconst ingredients = rawExtraction.ingredients || {};\nconst allergens = rawExtraction.allergens || {};\nconst missingInfo = rawExtraction.missing_information || [];\nconst conflicts = rawExtraction.conflicts || [];\n\n// Deterministic Calculation Engine\n// Rule: Package Total = Nutrient Amount per Serving * Servings per Container\n// Only calculated when both values are non-null positive numbers\nconst servingsCount = (serving.servings_per_container && typeof serving.servings_per_container === 'number' && serving.servings_per_container > 0)\n  ? serving.servings_per_container\n  : null;\n\nconst calculatedPackage = {};\nconst canCalculatePackage = servingsCount !== null;\n\nconst standardNutrients = ['energy', 'protein', 'total_fat', 'saturated_fat', 'carbohydrate', 'sugar', 'sodium'];\n\nfor (const nutrient of standardNutrients) {\n  const val = nutrition[nutrient];\n  if (typeof val === 'number' && canCalculatePackage) {\n    // Deterministic calculation\n    calculatedPackage[nutrient] = Math.round((val * servingsCount) * 100) / 100;\n  } else {\n    calculatedPackage[nutrient] = null;\n  }\n}\n\n// Unit normalization (if energy is in kJ and kcal is missing, 1 kJ = 0.239006 kcal)\nif (nutrition.energy_kj && !nutrition.energy) {\n  nutrition.energy = Math.round(nutrition.energy_kj * 0.239006);\n  nutrition.energy_unit = 'kkal';\n}\n\nif (!canCalculatePackage) {\n  missingInfo.push('Jumlah sajian per kemasan tidak tersedia di label; kalkulasi total per kemasan ditiadakan.');\n}\n\nconst canonicalResult = {\n  session_id: inputData.session_id || `nutri_${Date.now()}`,\n  status: 'review_required',\n  extraction: {\n    identity: {\n      name: identity.name || null,\n      brand: identity.brand || null,\n      category: identity.category || null\n    },\n    serving: {\n      size: typeof serving.size === 'number' ? serving.size : null,\n      unit: serving.unit || 'g',\n      servings_per_container: servingsCount,\n      basis: serving.basis || 'per_serving'\n    },\n    nutrition: {\n      energy: typeof nutrition.energy === 'number' ? nutrition.energy : null,\n      protein: typeof nutrition.protein === 'number' ? nutrition.protein : null,\n      total_fat: typeof nutrition.total_fat === 'number' ? nutrition.total_fat : null,\n      saturated_fat: typeof nutrition.saturated_fat === 'number' ? nutrition.saturated_fat : null,\n      carbohydrate: typeof nutrition.carbohydrate === 'number' ? nutrition.carbohydrate : null,\n      sugar: typeof nutrition.sugar === 'number' ? nutrition.sugar : null,\n      sodium: typeof nutrition.sodium === 'number' ? nutrition.sodium : null,\n      additional: nutrition.additional || []\n    },\n    calculated: {\n      package: calculatedPackage,\n      can_calculate_package: canCalculatePackage\n    },\n    ingredients: {\n      raw_text: ingredients.raw_text || null,\n      items: ingredients.items || []\n    },\n    allergens: {\n      explicit_declaration: allergens.explicit_declaration || null,\n      items: allergens.items || []\n    },\n    missing_information: missingInfo,\n    conflicts: conflicts\n  }\n};\n\nreturn [{\n  json: canonicalResult\n}];"
+        "jsCode": "// NutriScanner — Deterministic Calculation & Provenance Engine\nconst allItems = $input.all();\nif (allItems.length === 0) {\n  return [{ json: { error: { code: 'NO_DATA', message: 'Tidak ada data untuk diproses.' } } }];\n}\n\nconst itemJson = allItems[0].json;\nconst sessionId = itemJson.session_id || `nutri_${Date.now()}`;\nconst mode = itemJson.mode || 'photo';\nlet rawExtraction = {};\n\nif (itemJson.error) {\n  return [{\n    json: {\n      error: {\n        code: itemJson.error.code || 'AI_PROVIDER_ERROR',\n        message: itemJson.error.message || 'Gagal memproses gambar pada penyedia AI.',\n        retryable: true\n      }\n    }\n  }];\n}\n\nif (mode === 'manual') {\n  rawExtraction = itemJson.extraction || {};\n} else {\n  try {\n    let content = itemJson.choices?.[0]?.message?.content || '{}';\n    content = content.replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();\n    const match = content.match(/\\{[\\s\\S]*\\}/);\n    if (match) content = match[0];\n    rawExtraction = JSON.parse(content);\n  } catch (e) {\n    return [{\n      json: {\n        error: {\n          code: 'JSON_PARSE_ERROR',\n          message: 'Format ekstraksi AI tidak valid.',\n          retryable: true\n        }\n      }\n    }];\n  }\n}\n\nconst identity = rawExtraction.identity || { name: null, brand: null, category: null };\nconst serving = rawExtraction.serving || { size: null, unit: null, servings_per_container: null, basis: null };\nconst nutrition = rawExtraction.nutrition || { energy: null, energy_kj: null, protein: null, total_fat: null, saturated_fat: null, carbohydrate: null, sugar: null, sodium: null, additional: [] };\nconst ingredients = rawExtraction.ingredients || { raw_text: null, items: [] };\nconst allergens = rawExtraction.allergens || { explicit_declaration: null, items: [] };\nconst missingInfo = Array.isArray(rawExtraction.missing_information) ? [...rawExtraction.missing_information] : [];\nconst conflicts = Array.isArray(rawExtraction.conflicts) ? [...rawExtraction.conflicts] : [];\n\n// STEP 1: Energy Normalization (kJ -> kcal)\nif (nutrition.energy === null && typeof nutrition.energy_kj === 'number') {\n  nutrition.energy = Math.round(nutrition.energy_kj * 0.239006);\n}\n\n// STEP 2: Validate Prerequisite for Package Calculation\nconst servingsCount = (typeof serving.servings_per_container === 'number' && serving.servings_per_container > 0)\n  ? serving.servings_per_container\n  : null;\n\nconst canCalculatePackage = servingsCount !== null;\nconst calculatedPackage = {};\nconst standardNutrients = ['energy', 'protein', 'total_fat', 'saturated_fat', 'carbohydrate', 'sugar', 'sodium'];\n\n// STEP 3: Deterministic Package Calculation\nfor (const nutrient of standardNutrients) {\n  const val = nutrition[nutrient];\n  if (typeof val === 'number' && canCalculatePackage) {\n    calculatedPackage[nutrient] = Math.round((val * servingsCount) * 100) / 100;\n  } else {\n    calculatedPackage[nutrient] = null;\n  }\n}\n\n// STEP 4: Missing Information Honesty\nif (!canCalculatePackage) {\n  missingInfo.push('Jumlah sajian per kemasan tidak tercantum pada label; kalkulasi total per kemasan ditiadakan.');\n}\nif (!ingredients.raw_text && (!ingredients.items || ingredients.items.length === 0)) {\n  missingInfo.push('Daftar komposisi tidak terdeteksi pada foto/teks label.');\n}\nif (nutrition.sugar === null) {\n  missingInfo.push('Kandungan gula tidak tertera pada tabel gizi.');\n}\nif (nutrition.sodium === null) {\n  missingInfo.push('Kandungan natrium tidak tertera pada tabel gizi.');\n}\n\nconst canonicalResult = {\n  session_id: sessionId,\n  status: 'review_required',\n  source: mode === 'manual' ? 'user_provided' : 'ai_extracted',\n  usage: itemJson.usage || null,\n  extraction: {\n    identity,\n    serving,\n    nutrition,\n    calculated: {\n      package: calculatedPackage,\n      can_calculate_package: canCalculatePackage\n    },\n    ingredients,\n    allergens,\n    missing_information: Array.from(new Set(missingInfo)),\n    conflicts\n  }\n};\n\nreturn [{\n  json: canonicalResult\n}];"
       },
       "name": "Deterministic Calculation & Reconciler",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 440],
+      "position": [
+        1560,
+        440
+      ],
       "id": "code-calc-reconciler-08"
     },
     {
@@ -124,7 +178,10 @@
       "name": "Respond to Web Client",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1780, 440],
+      "position": [
+        1780,
+        440
+      ],
       "id": "respond-success-09"
     }
   ],
@@ -133,14 +190,14 @@
       "main": [
         [
           {
-            "node": "Validate & Batch Intake",
+            "node": "Validate Intake",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Validate & Batch Intake": {
+    "Validate Intake": {
       "main": [
         [
           {
