@@ -19,3 +19,10 @@ Thumbs.db
 scratch/
 tmp/
 temp/
+
+# Docker & n8n migration prep
+n8n-data/
+docker-compose.override.yml
+*.pem
+*.key
+*.p12
