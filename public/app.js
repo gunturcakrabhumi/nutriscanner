@@ -5,8 +5,8 @@
 
 // Configuration
 const CONFIG = {
-  ANALYZE_ENDPOINT: 'http://localhost:5678/webhook/api/analyze',
-  CONFIRM_ENDPOINT: 'http://localhost:5678/webhook/api/analyze/confirm',
+  ANALYZE_ENDPOINT: 'http://localhost:5680/webhook/api/analyze',
+  CONFIRM_ENDPOINT: 'http://localhost:5680/webhook/api/analyze/confirm',
   // MVP Technical Constraint: 1 primary label photo per analysis call for fast & reliable inference
   // Product Roadmap Vision: Multi-photo package analysis (1-4 images) is deferred to future phase
   MAX_IMAGES: 1,
@@ -742,7 +742,7 @@ elements.btnScanAnother.addEventListener('click', () => {
 // Initialize System Status Check
 async function checkHealth() {
   try {
-    const res = await fetch('http://localhost:5678/healthz');
+    const res = await fetch('http://localhost:5680/healthz');
     if (res.ok) {
       elements.systemStatus.className = 'status-indicator status-ready';
       elements.systemStatus.innerHTML = '<span class="status-dot"></span> Sistem Siap';
