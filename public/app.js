@@ -742,14 +742,9 @@ elements.btnScanAnother.addEventListener('click', () => {
 // Initialize System Status Check
 async function checkHealth() {
   try {
-    const res = await fetch('http://localhost:5680/healthz');
-    if (res.ok) {
-      elements.systemStatus.className = 'status-indicator status-ready';
-      elements.systemStatus.innerHTML = '<span class="status-dot"></span> Sistem Siap';
-    } else {
-      elements.systemStatus.className = 'status-indicator status-warning';
-      elements.systemStatus.innerHTML = '<span class="status-dot"></span> Server Terhubung';
-    }
+    await fetch('http://localhost:5680/healthz', { mode: 'no-cors' });
+    elements.systemStatus.className = 'status-indicator status-ready';
+    elements.systemStatus.innerHTML = '<span class="status-dot"></span> Sistem Siap';
   } catch (e) {
     elements.systemStatus.className = 'status-indicator status-error';
     elements.systemStatus.innerHTML = '<span class="status-dot"></span> Server n8n Offline';
